@@ -1,400 +1,366 @@
-import io
-from datetime import datetime
-from urllib.parse import urlencode
-
-import qrcode
-import streamlit as st
-from huggingface_hub import InferenceClient
-from PIL import Image, ImageDraw, ImageFont
-from supabase import create_client
-
-
-# ------------------------------
-# Page + Theme Setup
-# ------------------------------
-st.set_page_config(
-    page_title="SaaS Shop AI Builder",
-    page_icon="🏪",
-    layout="wide",
+ (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
+diff --git a/shop_ai_builder_streamlit.py b/shop_ai_builder_streamlit.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..a01a04cd6e7d642790f7e7352f04281067d62b4c
+--- /dev/null
++++ b/shop_ai_builder_streamlit.py
+@@ -0,0 +1,356 @@
++import io
++from datetime import datetime
++
++import qrcode
++import streamlit as st
++from huggingface_hub import InferenceClient
++from PIL import Image, ImageDraw, ImageFont
++from supabase import create_client
++
++
++APP_BASE_URL = "https://localaisaas-4ma49cqnbwp8n9bir69ymz.streamlit.app"
++
++
++def local_css() -> None:
++    """Polished CSS for customer chat and admin dashboard."""
++    st.markdown(
++        """
++        <style>
++            :root {
++                --brand-primary: #1e3a8a;
++                --brand-secondary: #2563eb;
++                --brand-accent: #0ea5e9;
++                --bg-soft: #f6f9fc;
++                --surface: #ffffff;
++                --text-main: #0f172a;
++            }
++
++            .stApp {
++                background: radial-gradient(circle at top right, #dbeafe 0%, #f8fafc 42%, #eef2ff 100%);
++                color: var(--text-main);
++            }
++
++            .main-header {
++                padding: 1.3rem 1.5rem;
++                border-radius: 20px;
++                background: linear-gradient(130deg, #1e3a8a 0%, #2563eb 54%, #38bdf8 100%);
++                color: #fff;
++                box-shadow: 0 18px 40px rgba(30, 58, 138, 0.22);
++                margin-bottom: 1.1rem;
++            }
++
++            .main-header h1 {
++                margin: 0;
++                font-weight: 800;
++                letter-spacing: 0.2px;
++            }
++
++            .main-header p {
++                margin: 0.2rem 0 0;
++                opacity: 0.94;
++            }
++
++            .glass-card {
++                background: rgba(255,255,255,0.85);
++                border: 1px solid rgba(148, 163, 184, 0.22);
++                border-radius: 18px;
++                padding: 1rem;
++                box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
++                margin-bottom: .8rem;
++            }
++
++            .stChatMessage {
++                border-radius: 16px;
++                border: 1px solid #e2e8f0;
++                background: #fff;
++                box-shadow: 0 6px 22px rgba(15, 23, 42, 0.06);
++                padding: .55rem .75rem;
++                margin-bottom: .65rem;
++            }
++
++            .stChatInputContainer {
++                background: rgba(255,255,255,.93);
++                border: 1px solid #e2e8f0;
++                border-radius: 16px;
++                padding-bottom: 8px;
++            }
++
++            .stButton>button,
++            .stDownloadButton>button {
++                border-radius: 14px;
++                border: none;
++                font-weight: 700;
++                min-height: 46px;
++                background: linear-gradient(130deg, var(--brand-primary), var(--brand-secondary));
++                color: #fff;
++            }
++
++            .qr-card {
++                border-radius: 22px;
++                background: #fff;
++                border: 1px solid #dbeafe;
++                padding: 16px;
++                box-shadow: 0 12px 28px rgba(37, 99, 235, 0.12);
++                text-align: center;
++            }
++
++            .tiny-note {
++                font-size: .89rem;
++                color: #334155;
++            }
++        </style>
++        """,
++        unsafe_allow_html=True,
++    )
++
++
++def get_supabase_client():
++    url = st.secrets["SUPABASE_URL"]
++    key = st.secrets["SUPABASE_KEY"]
++    return create_client(url, key)
++
++
++def get_hf_client():
++    return InferenceClient(api_key=st.secrets["HF_TOKEN"])
++
++
++def build_shop_url(slug: str) -> str:
++    return f"{APP_BASE_URL}/?shop={slug.lower()}"
++
++
++def branded_qr_image(target_url: str, shop_name: str) -> Image.Image:
++    """Create a premium QR image with simple brand treatment and center label."""
++    qr = qrcode.QRCode(
++        version=1,
++        error_correction=qrcode.constants.ERROR_CORRECT_H,
++        box_size=14,
++        border=3,
++    )
++    qr.add_data(target_url)
++    qr.make(fit=True)
++
++    qr_img = qr.make_image(fill_color="#111827", back_color="white").convert("RGB")
++
++    canvas_size = qr_img.size[0] + 160
++    canvas = Image.new("RGB", (canvas_size, canvas_size + 120), "#f8fafc")
++    draw = ImageDraw.Draw(canvas)
++
++    # Card background
++    draw.rounded_rectangle(
++        (20, 20, canvas_size - 20, canvas_size - 20),
++        radius=35,
++        fill="#ffffff",
++        outline="#cbd5e1",
++        width=2,
++    )
++
++    # Paste QR in middle card
++    offset = ((canvas_size - qr_img.size[0]) // 2, 80)
++    canvas.paste(qr_img, offset)
++
++    # Badge (Google Pay inspired clean brand strip)
++    badge_w, badge_h = 300, 54
++    badge_x = (canvas_size - badge_w) // 2
++    badge_y = canvas_size - 40
++    draw.rounded_rectangle(
++        (badge_x, badge_y, badge_x + badge_w, badge_y + badge_h),
++        radius=24,
++        fill="#1e3a8a",
++    )
++
++    title = (shop_name or "Shop AI")[:28]
++    footer = "Scan & Chat with AI"
++
++    try:
++        font_title = ImageFont.truetype("DejaVuSans-Bold.ttf", 30)
++        font_footer = ImageFont.truetype("DejaVuSans-Bold.ttf", 24)
++        font_shop = ImageFont.truetype("DejaVuSans.ttf", 22)
++    except OSError:
++        font_title = font_footer = font_shop = ImageFont.load_default()
++
++    draw.text((44, 34), "AI SHOP QR", font=font_title, fill="#0f172a")
++    draw.text((48, canvas_size - 86), title, font=font_shop, fill="#334155")
++    draw.text((badge_x + 60, badge_y + 13), footer, font=font_footer, fill="#ffffff")
++
++    return canvas
++
++
++def qr_bytes(image: Image.Image) -> bytes:
++    buffer = io.BytesIO()
++    image.save(buffer, format="PNG")
++    return buffer.getvalue()
++
++
++def render_customer_chat(supabase, client, shop_slug: str) -> None:
++    data = supabase.table("shops").select("*").eq("shop_slug", shop_slug.lower()).execute()
++    if not data.data:
++        st.error("Dukan nahi mili! कृपया QR ya link check karein.")
++        return
++
++    shop = data.data[0]
++    st.markdown(
++        f"""
++        <div class="main-header">
++            <h1>🏪 {shop['shop_name']}</h1>
++            <p>Fast, polite aur professional AI assistant — Hindi + English.</p>
++        </div>
++        """,
++        unsafe_allow_html=True,
++    )
++
++    st.markdown(
++        """
++        <div class="glass-card tiny-note">
++            Suggestion: Price, timing, delivery aur offers ke questions puchne ke liye niche chat use karein.
++        </div>
++        """,
++        unsafe_allow_html=True,
++    )
++
++    if "messages" not in st.session_state:
++        st.session_state.messages = [
++            {
++                "role": "assistant",
++                "content": "Namaste! 👋 Main aapki madad ke liye hoon. Aap products, timing, offers ya delivery ke bare mein puch sakte hain.",
++            }
++        ]
++
++    for message in st.session_state.messages:
++        avatar = "🤖" if message["role"] == "assistant" else "👤"
++        with st.chat_message(message["role"], avatar=avatar):
++            st.markdown(message["content"])
++
++    if prompt := st.chat_input("Dukan ke baare mein puchiye…"):
++        st.session_state.messages.append({"role": "user", "content": prompt})
++        with st.chat_message("user", avatar="👤"):
++            st.markdown(prompt)
++
++        try:
++            system_instruction = (
++                f"You are a premium support assistant for {shop['shop_name']}. "
++                f"Rules: {shop['rules']}. Contact: {shop['contact_info']}. "
++                "Keep responses short, friendly, practical, and bilingual (Hindi+English when useful)."
++            )
++
++            messages = [{"role": "system", "content": system_instruction}] + [
++                {"role": m["role"], "content": m["content"]} for m in st.session_state.messages
++            ]
++
++            response = ""
++            with st.spinner("AI soch raha hai..."):
++                for chunk in client.chat_completion(
++                    model="Qwen/Qwen2.5-7B-Instruct",
++                    messages=messages,
++                    max_tokens=500,
++                    stream=True,
++                ):
++                    response += chunk.choices[0].delta.content or ""
++
++            with st.chat_message("assistant", avatar="🤖"):
++                st.markdown(response)
++
++            st.session_state.messages.append({"role": "assistant", "content": response})
++
++        except Exception:
++            st.warning("⚠️ Thodi der baad try karein, AI break le raha hai.")
++
++
++def render_admin(supabase) -> None:
++    st.markdown(
++        "<div class='main-header'><h1>SaaS Shop AI Builder 🚀</h1><p>Local dukaan ko digital, smart aur premium banayein.</p></div>",
++        unsafe_allow_html=True,
++    )
++
++    with st.sidebar:
++        st.header("Kaise Use Karein?")
++        st.write("1) Dukan details bharien.")
++        st.write("2) Rules mein products, delivery aur timing define karein.")
++        st.write("3) Link + branded QR download karke print karein.")
++
++    if "generated_url" not in st.session_state:
++        st.session_state.generated_url = ""
++    if "generated_qr" not in st.session_state:
++        st.session_state.generated_qr = b""
++    if "generated_slug" not in st.session_state:
++        st.session_state.generated_slug = ""
++
++    with st.container():
++        st.subheader("Naya Shop AI banayein")
++        with st.form("setup", clear_on_submit=True):
++            col1, col2 = st.columns(2)
++            with col1:
++                name = st.text_input("Dukan ka Naam", placeholder="Example: Sharma Sweets")
++                slug = st.text_input("Unique ID", placeholder="sharma-sweets")
++            with col2:
++                contact = st.text_input("Phone/Contact", placeholder="9876543210")
++
++            rules = st.text_area(
++                "Dukan ke Rules, Products aur Timing",
++                placeholder="Hum 9 baje khulte hain. Free delivery 2km tak hai...",
++            )
++
++            submitted = st.form_submit_button("Generate Professional AI + QR")
++            if submitted:
++                if name and slug:
++                    normalized_slug = slug.lower().strip()
++                    supabase.table("shops").upsert(
++                        {
++                            "shop_name": name.strip(),
++                            "shop_slug": normalized_slug,
++                            "rules": rules.strip(),
++                            "contact_info": contact.strip(),
++                            "updated_at": datetime.utcnow().isoformat(),
++                        },
++                        on_conflict="shop_slug",
++                    ).execute()
++
++                    created_url = build_shop_url(normalized_slug)
++                    qr_image = branded_qr_image(created_url, name.strip())
++
++                    st.session_state.generated_url = created_url
++                    st.session_state.generated_qr = qr_bytes(qr_image)
++                    st.session_state.generated_slug = normalized_slug
++
++                    st.balloons()
++                    st.success(f"Dukan '{name}' ka AI ready hai!")
++                else:
++                    st.error("Naam aur ID zaroori hai!")
++
++    if st.session_state.generated_url:
++        st.markdown("### Shop Live Assets")
++        cols = st.columns([1.2, 1])
++        with cols[0]:
++            st.markdown('<div class="glass-card">', unsafe_allow_html=True)
++            st.code(st.session_state.generated_url, language="text")
++            st.link_button("🔗 Open Customer URL", st.session_state.generated_url)
++            st.download_button(
++                "⬇️ Download URL as TXT",
++                data=st.session_state.generated_url,
++                file_name=f"{st.session_state.generated_slug}-customer-link.txt",
++                mime="text/plain",
++            )
++            st.markdown("</div>", unsafe_allow_html=True)
++
++        with cols[1]:
++            st.markdown('<div class="qr-card">', unsafe_allow_html=True)
++            st.image(st.session_state.generated_qr, caption="Branded QR", use_container_width=True)
++            st.download_button(
++                "⬇️ Download Premium QR",
++                data=st.session_state.generated_qr,
++                file_name=f"{st.session_state.generated_slug}-premium-qr.png",
++                mime="image/png",
++            )
++            st.markdown("</div>", unsafe_allow_html=True)
++
++
++# App entrypoint
++st.set_page_config(page_title="SaaS Shop AI Builder", page_icon="🏪", layout="wide")
++local_css()
++supabase = get_supabase_client()
++hf_client = get_hf_client()
++
++shop_slug = st.query_params.get("shop")
++if shop_slug:
++    render_customer_chat(supabase, hf_client, shop_slug)
++else:
++    render_admin(supabase)
+ 
+EOF
 )
-
-
-# ------------------------------
-# UI Styling
-# ------------------------------
-def local_css() -> None:
-    st.markdown(
-        """
-        <style>
-        :root {
-            --bg: #f3f6fb;
-            --surface: #ffffff;
-            --text: #0f172a;
-            --muted: #64748b;
-            --primary: #1d4ed8;
-            --secondary: #7c3aed;
-            --success: #059669;
-            --border: #e2e8f0;
-            --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
-            --radius: 18px;
-        }
-
-        .stApp {
-            background:
-                radial-gradient(circle at top right, rgba(29,78,216,0.08), transparent 40%),
-                radial-gradient(circle at top left, rgba(124,58,237,0.08), transparent 30%),
-                var(--bg);
-            color: var(--text);
-        }
-
-        .hero-card {
-            background: linear-gradient(135deg, #111827 0%, #1e3a8a 45%, #7c3aed 100%);
-            color: #fff;
-            border-radius: 20px;
-            padding: 28px;
-            box-shadow: var(--shadow);
-            margin-bottom: 16px;
-        }
-
-        .hero-card h1 {
-            margin: 0;
-            font-size: 2rem;
-            font-weight: 800;
-            letter-spacing: .2px;
-        }
-
-        .hero-card p {
-            margin: 8px 0 0;
-            color: #e2e8f0;
-            font-size: 1rem;
-        }
-
-        .section-card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 16px;
-            box-shadow: var(--shadow);
-            margin-bottom: 16px;
-        }
-
-        .meta-chip {
-            display: inline-block;
-            border: 1px solid rgba(255,255,255,0.35);
-            padding: 6px 12px;
-            border-radius: 999px;
-            font-size: .85rem;
-            margin-top: 12px;
-            color: #e2e8f0;
-        }
-
-        .stChatMessage {
-            border-radius: 16px;
-            padding: 10px 12px;
-            box-shadow: 0 4px 16px rgba(2, 6, 23, 0.07);
-            border: 1px solid var(--border);
-        }
-
-        .stChatMessage[data-testid="stChatMessageContent"] {
-            font-size: 1rem;
-            line-height: 1.55;
-        }
-
-        .stChatInputContainer {
-            background: rgba(255,255,255,0.72);
-            backdrop-filter: blur(10px);
-            border: 1px solid var(--border);
-            border-radius: 14px;
-            padding: 8px;
-            margin-top: 8px;
-        }
-
-        .stButton > button,
-        .stDownloadButton > button,
-        [data-testid="stFormSubmitButton"] button {
-            width: 100%;
-            border-radius: 12px;
-            border: none;
-            background: linear-gradient(135deg, var(--primary), var(--secondary));
-            color: white;
-            font-weight: 700;
-            min-height: 46px;
-        }
-
-        [data-testid="stSidebar"] {
-            background: #0f172a;
-            color: #e2e8f0;
-        }
-
-        [data-testid="stSidebar"] * {
-            color: #e2e8f0 !important;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-# ------------------------------
-# Utilities
-# ------------------------------
-def shop_url_from_slug(slug: str) -> str:
-    params = urlencode({"shop": slug.lower().strip()})
-    return f"https://localaisaas-4ma49cqnbwp8n9bir69ymz.streamlit.app/?{params}"
-
-
-def _safe_font(size: int) -> ImageFont.ImageFont:
-    for name in ("DejaVuSans-Bold.ttf", "arial.ttf"):
-        try:
-            return ImageFont.truetype(name, size)
-        except OSError:
-            continue
-    return ImageFont.load_default()
-
-
-def generate_branded_qr(shop_name: str, slug: str, primary_color=(30, 58, 138)) -> bytes:
-    """Generate a GPay-style branded QR card and return PNG bytes."""
-    link = shop_url_from_slug(slug)
-
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_H,
-        box_size=12,
-        border=3,
-    )
-    qr.add_data(link)
-    qr.make(fit=True)
-    qr_img = qr.make_image(fill_color=primary_color, back_color="white").convert("RGB")
-    qr_img = qr_img.resize((520, 520))
-
-    card_w, card_h = 700, 980
-    card = Image.new("RGB", (card_w, card_h), color=(245, 247, 252))
-    draw = ImageDraw.Draw(card)
-
-    # Header gradient-style blocks
-    draw.rounded_rectangle((30, 30, card_w - 30, 220), radius=34, fill=(15, 23, 42))
-    draw.rounded_rectangle((35, 35, card_w - 35, 215), radius=30, fill=(30, 58, 138))
-
-    title_font = _safe_font(44)
-    subtitle_font = _safe_font(26)
-    small_font = _safe_font(22)
-    shop_font = _safe_font(32)
-
-    draw.text((60, 65), "SHOP AI", fill="white", font=title_font)
-    draw.text((60, 125), "Smart Customer Assistant", fill=(226, 232, 240), font=subtitle_font)
-
-    # QR container
-    qr_box = (90, 250, card_w - 90, 770)
-    draw.rounded_rectangle(qr_box, radius=30, fill="white", outline=(203, 213, 225), width=3)
-    card.paste(qr_img, (90, 250))
-
-    # Center logo style circle overlay
-    badge_center = (card_w // 2, 510)
-    badge_r = 56
-    draw.ellipse(
-        (badge_center[0] - badge_r, badge_center[1] - badge_r, badge_center[0] + badge_r, badge_center[1] + badge_r),
-        fill=(30, 58, 138),
-        outline="white",
-        width=5,
-    )
-    draw.text((badge_center[0] - 22, badge_center[1] - 18), "AI", fill="white", font=_safe_font(36))
-
-    # Footer
-    short_name = shop_name.strip()[:28] + ("..." if len(shop_name.strip()) > 28 else "")
-    draw.text((60, 800), f"{short_name}", fill=(15, 23, 42), font=shop_font)
-    draw.text((60, 850), "Scan & Chat on WhatsApp-style Web Assistant", fill=(71, 85, 105), font=small_font)
-    draw.text((60, 890), f"/{slug.lower()}", fill=(30, 58, 138), font=small_font)
-
-    # Timestamp for printed usage
-    stamp = datetime.utcnow().strftime("Generated: %Y-%m-%d %H:%M UTC")
-    draw.text((60, 930), stamp, fill=(100, 116, 139), font=_safe_font(18))
-
-    out = io.BytesIO()
-    card.save(out, format="PNG")
-    out.seek(0)
-    return out.getvalue()
-
-
-def init_clients():
-    url = st.secrets["SUPABASE_URL"]
-    key = st.secrets["SUPABASE_KEY"]
-    hf_token = st.secrets["HF_TOKEN"]
-    return create_client(url, key), InferenceClient(api_key=hf_token)
-
-
-# ------------------------------
-# App Render
-# ------------------------------
-local_css()
-
-supabase, hf_client = init_clients()
-shop_slug = st.query_params.get("shop")
-
-if shop_slug:
-    data = supabase.table("shops").select("*").eq("shop_slug", shop_slug.lower()).execute()
-
-    if data.data:
-        shop = data.data[0]
-        st.markdown(
-            f"""
-            <div class="hero-card">
-                <h1>🏪 {shop['shop_name']}</h1>
-                <p>Aapki sewa mein hamara AI Assistant — instant, polite aur professional support.</p>
-                <span class="meta-chip">24x7 Smart Replies • Hindi + English</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        col_chat, col_meta = st.columns([2.2, 1], gap="large")
-
-        with col_meta:
-            st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-            st.subheader("Shop Details")
-            st.write(f"**Contact:** {shop.get('contact_info') or 'Not set'}")
-            st.write(f"**Slug:** `{shop.get('shop_slug', '')}`")
-            st.write("**Rules:**")
-            st.caption(shop.get("rules") or "No custom rules configured.")
-            st.markdown("</div>", unsafe_allow_html=True)
-
-        with col_chat:
-            if "messages" not in st.session_state:
-                st.session_state.messages = [
-                    {
-                        "role": "assistant",
-                        "content": (
-                            f"Namaste! Main {shop['shop_name']} ka AI assistant hoon. "
-                            "Aap products, delivery, price, timing ya offers ke baare mein pooch sakte hain."
-                        ),
-                    }
-                ]
-
-            for msg in st.session_state.messages:
-                with st.chat_message(msg["role"], avatar="🤖" if msg["role"] == "assistant" else "👤"):
-                    st.markdown(msg["content"])
-
-            prompt = st.chat_input("Type your question... (Hindi / English)")
-            if prompt:
-                st.session_state.messages.append({"role": "user", "content": prompt})
-                with st.chat_message("user", avatar="👤"):
-                    st.markdown(prompt)
-
-                try:
-                    system_instruction = (
-                        f"You are the official assistant for {shop['shop_name']}. "
-                        f"Business rules: {shop.get('rules')}. "
-                        f"Contact info: {shop.get('contact_info')}. "
-                        "Reply in clean Hindi/English, keep concise, and avoid hallucinating unavailable inventory."
-                    )
-
-                    model_messages = [{"role": "system", "content": system_instruction}] + [
-                        {"role": m["role"], "content": m["content"]} for m in st.session_state.messages
-                    ]
-
-                    answer = ""
-                    with st.spinner("AI assistant is typing..."):
-                        for chunk in hf_client.chat_completion(
-                            model="Qwen/Qwen2.5-7B-Instruct",
-                            messages=model_messages,
-                            max_tokens=500,
-                            stream=True,
-                        ):
-                            answer += chunk.choices[0].delta.content or ""
-
-                    with st.chat_message("assistant", avatar="🤖"):
-                        st.markdown(answer)
-                    st.session_state.messages.append({"role": "assistant", "content": answer})
-
-                except Exception:
-                    st.warning("⚠️ Abhi response delay ho raha hai. Kripya kuch der baad try karein.")
-
-    else:
-        st.error("Dukan nahi mili. Kripya valid link use karein.")
-
-else:
-    st.markdown(
-        """
-        <div class='hero-card'>
-            <h1>SaaS Shop AI Builder 🚀</h1>
-            <p>Local dukan ko digital banayein with AI chat + branded QR onboarding.</p>
-            <span class='meta-chip'>Create in 1 minute • Share instantly</span>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.sidebar:
-        st.header("Setup Guide")
-        st.write("1) Dukan details bharein.")
-        st.write("2) Rules, timing aur offers set karein.")
-        st.write("3) URL + QR print karke counter par lagayein.")
-        st.divider()
-        st.subheader("Pro Suggestions")
-        st.caption("• Daily FAQ update karein")
-        st.caption("• Delivery radius clearly define karein")
-        st.caption("• Offer expiry date mention karein")
-
-    c1, c2 = st.columns([1.6, 1], gap="large")
-
-    with c1:
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.subheader("Naya Shop AI Banayein")
-
-        with st.form("setup", clear_on_submit=False):
-            f1, f2 = st.columns(2)
-            with f1:
-                name = st.text_input("Dukan ka Naam", placeholder="Example: Sharma Sweets")
-                slug = st.text_input("Unique ID", placeholder="sharma-sweets")
-            with f2:
-                contact = st.text_input("Phone/WhatsApp", placeholder="9876543210")
-                primary_brand = st.color_picker("QR Brand Color", "#1E3A8A")
-
-            rules = st.text_area(
-                "Dukan ke Rules, Products aur Timing",
-                placeholder="Hum subah 9 baje khulte hain. 2km tak free delivery hai...",
-                height=130,
-            )
-
-            submitted = st.form_submit_button("Generate Professional AI")
-
-            if submitted:
-                if not (name and slug):
-                    st.error("Naam aur Unique ID dono zaroori hain.")
-                else:
-                    clean_slug = slug.lower().strip().replace(" ", "-")
-                    supabase.table("shops").upsert(
-                        {
-                            "shop_name": name.strip(),
-                            "shop_slug": clean_slug,
-                            "rules": rules.strip(),
-                            "contact_info": contact.strip(),
-                        },
-                        on_conflict="shop_slug",
-                    ).execute()
-
-                    st.success(f"✅ Dukan '{name}' ka AI ready hai!")
-                    share_url = shop_url_from_slug(clean_slug)
-                    st.info(f"Customer URL: {share_url}")
-
-                    rgb = tuple(int(primary_brand[i : i + 2], 16) for i in (1, 3, 5))
-                    qr_png = generate_branded_qr(name, clean_slug, primary_color=rgb)
-
-                    st.download_button(
-                        label="⬇️ Download Branded QR (PNG)",
-                        data=qr_png,
-                        file_name=f"{clean_slug}-qr.png",
-                        mime="image/png",
-                    )
-
-                    st.image(qr_png, caption="Branded QR preview", use_container_width=False)
-
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    with c2:
-        st.markdown("<div class='section-card'>", unsafe_allow_html=True)
-        st.subheader("Why this design works")
-        st.write("✅ Mobile-friendly chat UI")
-        st.write("✅ Brand-consistent visual identity")
-        st.write("✅ Instant QR download for print/display")
-        st.write("✅ Better trust with professional look")
-        st.markdown("</div>", unsafe_allow_html=True)
