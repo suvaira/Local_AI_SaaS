@@ -26,7 +26,7 @@ if shop_slug:
         instruction = f"You are an AI assistant for {shop['shop_name']}. Rules: {shop['rules']}. Contact: {shop['contact_info']}. Answer briefly and politely in Hindi/English."
         
         # MODEL NAME UPDATE: 'gemini-1.5-flash' ki jagah ye use karein
-        model = genai.GenerativeModel('gemini-2.5-flash-exp')
+        model = genai.GenerativeModel('gemini-2.5-flash')
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
