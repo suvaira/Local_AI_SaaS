@@ -1,3 +1,5 @@
 streamlit
 supabase
 huggingface_hub
+qrcode[pil]
+Pillow
