@@ -3,3 +3,4 @@ supabase
 huggingface_hub
 qrcode[pil]
 Pillow
+PyPDF2
