@@ -1,237 +1,178 @@
-```python
 import streamlit as st
 from supabase import create_client
 from huggingface_hub import InferenceClient
 import qrcode
+from io import BytesIO
 from PIL import Image, ImageDraw, ImageFont
-import io
-from datetime import datetime
 
-# ---------------- CONFIG ----------------
-st.set_page_config(page_title="Suvaira AI", page_icon="🤖", layout="centered")
-
-# ---------------- CSS ----------------
+# --- PREMIUM UI DESIGN (Advanced CSS) ---
 def local_css():
     st.markdown("""
     <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap');
+    
+    html, body, [class*="st-"] {
+        font-family: 'Poppins', sans-serif;
+    }
+
     .stApp {
-        background: linear-gradient(to right, #eef2f3, #dfe9f3);
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
     }
 
+    /* Glassmorphism Header */
     .main-header {
-        text-align: center;
-        padding: 25px;
+        background: rgba(255, 255, 255, 0.8);
+        backdrop-filter: blur(10px);
         border-radius: 20px;
-        background: linear-gradient(135deg, #1E3A8A, #3B82F6);
-        color: white;
-        box-shadow: 0px 6px 15px rgba(0,0,0,0.15);
+        padding: 30px;
+        text-align: center;
+        box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        margin-bottom: 30px;
     }
 
-    [data-testid="stChatMessageContent-user"] {
-        background-color: #1E3A8A;
-        color: white;
-        border-radius: 15px;
-        padding: 10px;
+    /* Professional Chat Bubbles */
+    .stChatMessage {
+        background: white !important;
+        border-radius: 20px !important;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05) !important;
+        padding: 15px !important;
+        margin-bottom: 15px !important;
     }
 
-    [data-testid="stChatMessageContent-assistant"] {
-        background-color: #ffffff;
-        border-radius: 15px;
-        padding: 10px;
-    }
-
-    .stChatInputContainer {
+    /* GPay Style QR Card Preview */
+    .qr-card {
         background: white;
         border-radius: 20px;
-        padding: 10px;
-        box-shadow: 0px 3px 10px rgba(0,0,0,0.1);
+        padding: 20px;
+        text-align: center;
+        border: 2px solid #1E3A8A;
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+
+    /* Custom Buttons */
+    .stButton>button {
+        background: linear-gradient(45deg, #1E3A8A, #3B82F6);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 12px;
+        font-weight: 600;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton>button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(59, 130, 246, 0.4);
     }
     </style>
     """, unsafe_allow_html=True)
 
-local_css()
+# --- FUNCTION: Generate Branded QR Card ---
+def generate_qr_card(url, shop_name):
+    qr = qrcode.QRCode(version=1, box_size=10, border=5)
+    qr.add_data(url)
+    qr.make(fit=True)
+    qr_img = qr.make_image(fill_color="#1E3A8A", back_color="white")
+    
+    # Create a canvas for the card
+    card = Image.new('RGB', (400, 550), color='#1E3A8A')
+    draw = ImageDraw.Draw(card)
+    
+    # White rounded rectangle for QR
+    draw.rectangle([20, 100, 380, 530], fill="white")
+    
+    # Add Shop Name Text
+    # (Note: Standard PIL uses default font, for better fonts you'd load a .ttf)
+    draw.text((200, 50), shop_name, fill="white", anchor="mm")
+    draw.text((200, 80), "Scan to Chat with AI", fill="#c3cfe2", anchor="mm")
+    
+    # Paste QR onto card
+    qr_img = qr_img.resize((300, 300))
+    card.paste(qr_img, (50, 150))
+    
+    # Save to Buffer
+    buf = BytesIO()
+    card.save(buf, format="PNG")
+    return buf.getvalue()
 
-# ---------------- DB & AI ----------------
+# 1. Setup
 url = st.secrets["SUPABASE_URL"]
 key = st.secrets["SUPABASE_KEY"]
 supabase = create_client(url, key)
 client = InferenceClient(api_key=st.secrets["HF_TOKEN"])
 
-# ---------------- QR CODE ----------------
-def generate_qr(shop_name, url):
-    qr = qrcode.make(url).resize((300,300))
+local_css()
 
-    bg = Image.new("RGB", (420, 520), "#ffffff")
-    draw = ImageDraw.Draw(bg)
-
-    try:
-        font = ImageFont.truetype("arial.ttf", 28)
-    except:
-        font = ImageFont.load_default()
-
-    draw.text((40, 30), shop_name, fill="#1E3A8A", font=font)
-    bg.paste(qr, (60,120))
-    draw.text((60, 450), "Scan & Chat with AI 🤖", fill="gray")
-
-    return bg
-
-# ---------------- LANGUAGE DETECT ----------------
-def detect_language(text):
-    if any(c in text for c in "અઆઇઈઉઊએઐઓઔ"):
-        return "Gujarati"
-    elif any(c in text for c in "कखगघचछजझटठ"):
-        return "Hindi"
-    else:
-        return "English"
-
-# ---------------- ANALYTICS ----------------
-def save_analytics(shop_slug, question):
-    supabase.table("analytics").insert({
-        "shop_slug": shop_slug,
-        "question": question,
-        "time": str(datetime.now())
-    }).execute()
-
-# ---------------- ROUTING ----------------
 shop_slug = st.query_params.get("shop")
 
-# ======================================================
-# ================= CUSTOMER CHAT =======================
-# ======================================================
+# --- PART A: CUSTOMER CHAT ---
 if shop_slug:
-
     data = supabase.table("shops").select("*").eq("shop_slug", shop_slug.lower()).execute()
-
     if data.data:
         shop = data.data[0]
-
-        st.markdown(f"""
-        <div class="main-header">
-            <h1>🏪 {shop['shop_name']}</h1>
-            <p>AI Assistant 🤖</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"<div class='main-header'><h1>🏪 {shop['shop_name']}</h1><p>Online AI Assistant</p></div>", unsafe_allow_html=True)
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
 
-        for m in st.session_state.messages:
-            with st.chat_message(m["role"]):
-                st.markdown(m["content"])
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
 
-        if prompt := st.chat_input("Kuch bhi puchiye..."):
+        if prompt := st.chat_input("Puchiye..."):
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            with st.chat_message("user", avatar="👤"): st.markdown(prompt)
 
-            save_analytics(shop_slug, prompt)
-
-            st.session_state.messages.append({"role":"user","content":prompt})
-
-            lang = detect_language(prompt)
-
-            # FAQ matching
-            faq_answer = ""
-            if shop.get("faq"):
-                for line in shop["faq"].split("\n"):
-                    if ":" in line:
-                        q,a = line.split(":")
-                        if q.lower() in prompt.lower():
-                            faq_answer = a
-
-            if faq_answer:
-                response = faq_answer
-            else:
-                system = f"""
-                You are assistant of {shop['shop_name']}.
-                Rules: {shop['rules']}
-                Answer in {lang}.
-                """
-
-                msgs = [{"role":"system","content":system}]
-                for m in st.session_state.messages:
-                    msgs.append(m)
-
+            try:
+                sys_prompt = f"Assistant for {shop['shop_name']}. Rules: {shop['rules']}. Contact: {shop['contact_info']}. Reply in Hindi/English."
+                messages = [{"role": "system", "content": sys_prompt}] + st.session_state.messages
+                
                 response = ""
-                with st.spinner("AI soch raha hai..."):
-                    for chunk in client.chat_completion(
-                        model="Qwen/Qwen2.5-7B-Instruct",
-                        messages=msgs,
-                        max_tokens=400,
-                        stream=True,
-                    ):
-                        response += chunk.choices[0].delta.content or ""
-
-            with st.chat_message("assistant"):
-                st.markdown(response)
-
-                # ORDER BUTTON
-                if shop.get("contact_info"):
-                    st.link_button("📲 WhatsApp Order", f"https://wa.me/{shop['contact_info']}")
-
-            st.session_state.messages.append({"role":"assistant","content":response})
-
+                with st.spinner("AI is typing..."):
+                    for msg in client.chat_completion(model="Qwen/Qwen2.5-7B-Instruct", messages=messages, max_tokens=500, stream=True):
+                        response += msg.choices[0].delta.content or ""
+                
+                with st.chat_message("assistant", avatar="🤖"): st.markdown(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            except:
+                st.error("AI is busy. Try later.")
     else:
-        st.error("Shop nahi mila")
+        st.error("Shop not found.")
 
-# ======================================================
-# ================= ADMIN PANEL =========================
-# ======================================================
+# --- PART B: ADMIN DASHBOARD ---
 else:
-
-    st.markdown("""
-    <div class="main-header">
-        <h1>Suvaira AI Builder 🚀</h1>
-        <p>Local dukaan ko digital banao</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.sidebar:
-        st.header("Guide")
-        st.write("1. Shop add karo")
-        st.write("2. QR download karo")
-        st.write("3. Print & use")
-
-    # ---------------- CREATE SHOP ----------------
-    st.subheader("New Shop Create")
-
-    with st.form("form", clear_on_submit=True):
-
-        name = st.text_input("Shop Name")
-        slug = st.text_input("Unique ID")
-        contact = st.text_input("WhatsApp Number")
-
-        rules = st.text_area("Rules / Products / Timing")
-
-        faq = st.text_area("FAQ (format: question:answer)")
-
-        submit = st.form_submit_button("Create AI")
-
-        if submit:
-            supabase.table("shops").insert({
-                "shop_name": name,
-                "shop_slug": slug.lower(),
-                "rules": rules,
-                "contact_info": contact,
-                "faq": faq
-            }).execute()
-
-            st.success("AI Ready 🚀")
-
-            url = f"https://yourapp.streamlit.app/?shop={slug.lower()}"
-
-            qr = generate_qr(name, url)
-
-            st.image(qr)
-
-            buf = io.BytesIO()
-            qr.save(buf, format="PNG")
-
-            st.download_button("Download QR", buf.getvalue(), f"{slug}.png")
-
-    # ---------------- ANALYTICS ----------------
-    st.subheader("Analytics")
-
-    data = supabase.table("analytics").select("*").execute()
-
-    if data.data:
-        for d in data.data[-10:]:
-            st.write(f"{d['shop_slug']} → {d['question']}")
-```
+    st.markdown("<div class='main-header'><h1>Shop AI SaaS Builder 🚀</h1><p>Modern Solutions for Local Businesses</p></div>", unsafe_allow_html=True)
+    
+    tab1, tab2 = st.tabs(["🆕 Create New AI", "📱 My Branded QR"])
+    
+    with tab1:
+        with st.form("setup"):
+            name = st.text_input("Shop Name")
+            slug = st.text_input("Unique ID (e.g. suhani-ele)")
+            rules = st.text_area("Shop Rules & Inventory Details")
+            contact = st.text_input("Contact Info")
+            if st.form_submit_button("Launch AI"):
+                supabase.table("shops").insert({"shop_name": name, "shop_slug": slug.lower(), "rules": rules, "contact_info": contact}).execute()
+                st.success("AI is Live!")
+    
+    with tab2:
+        search_slug = st.text_input("Enter your Shop ID to get QR")
+        if search_slug:
+            data = supabase.table("shops").select("*").eq("shop_slug", search_slug.lower()).execute()
+            if data.data:
+                shop = data.data[0]
+                final_url = f"https://localaisaas-4ma49cqnbwp8n9bir69ymz.streamlit.app/?shop={shop['shop_slug']}"
+                
+                # Show QR Card
+                qr_img_data = generate_qr_card(final_url, shop['shop_name'])
+                st.image(qr_img_data, width=300, caption="Your Branded AI QR Card")
+                
+                st.download_button(
+                    label="📥 Download Branded QR Card",
+                    data=qr_img_data,
+                    file_name=f"{shop['shop_slug']}_qr.png",
+                    mime="image/png"
+                )
+            else:
+                st.warning("Shop ID not found.")
