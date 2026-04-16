@@ -66,7 +66,12 @@ else:
                 supabase.table("shops").insert(entry).execute()
                 
                 st.success(f"Badhai ho! Aapka AI taiyar hai.")
-                # Live link dikhana (Deploy hone ke baad ye kaam karega)
-                st.info(f"Aapka Customer Link: https://YOUR-APP-NAME.streamlit.app/?shop={s_slug.lower()}")
+                
+                # Naya Automatic Link Logic
+                base_url = "https://localaisaas-4ma49cqnbwp8n9bir69ymz.streamlit.app/"
+                final_link = f"{base_url}?shop={s_slug.lower()}"
+                
+                st.info(f"Aapka Customer Link: {final_link}")
+                st.write("Is link ko copy karein aur apne customer ko bhejein.")
             else:
                 st.warning("Kripya saari details bharein.")
