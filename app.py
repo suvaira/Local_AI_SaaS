@@ -1,4 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
 diff --git a/shop_ai_builder_streamlit.py b/shop_ai_builder_streamlit.py
 new file mode 100644
 index 0000000000000000000000000000000000000000..a01a04cd6e7d642790f7e7352f04281067d62b4c
@@ -361,6 +360,3 @@ index 0000000000000000000000000000000000000000..a01a04cd6e7d642790f7e7352f042810
 +    render_customer_chat(supabase, hf_client, shop_slug)
 +else:
 +    render_admin(supabase)
- 
-EOF
-)
