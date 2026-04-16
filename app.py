@@ -22,9 +22,11 @@ if shop_slug:
         st.title(f"Welcome to {shop['shop_name']}")
         st.subheader("AI Assistant")
 
-        # AI ko instruction dena (System Prompt)
+# AI ko instruction dena
         instruction = f"You are an AI assistant for {shop['shop_name']}. Rules: {shop['rules']}. Contact: {shop['contact_info']}. Answer briefly and politely in Hindi/English."
-        model = genai.GenerativeModel('gemini-1.5-flash', system_instruction=instruction)
+        
+        # MODEL NAME UPDATE: 'gemini-1.5-flash' ki jagah ye use karein
+        model = genai.GenerativeModel('gemini-1.5-flash') 
 
         if "messages" not in st.session_state:
             st.session_state.messages = []
@@ -38,14 +40,17 @@ if shop_slug:
             with st.chat_message("user"):
                 st.markdown(prompt)
 
-            chat = model.start_chat(history=[])
-            response = chat.send_message(prompt)
-            
-            with st.chat_message("assistant"):
-                st.markdown(response.text)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-    else:
-        st.error("Shop not found!")
+            # AI se response mangne ka naya aur safe tarika
+            try:
+                # System instruction ko prompt ke saath jod dena (taki error na aaye)
+                full_prompt = f"System Instruction: {instruction}\n\nUser Question: {prompt}"
+                response = model.generate_content(full_prompt)
+                
+                with st.chat_message("assistant"):
+                    st.markdown(response.text)
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+            except Exception as e:
+                st.error(f"AI Error: {e}")
 
 # --- PART B: SHOPKEEPER SETUP DASHBOARD ---
 else:
